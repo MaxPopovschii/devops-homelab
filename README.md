@@ -1,33 +1,296 @@
-# 🚀 DevOps Homelab - Guida Completa
 
-Una guida completa per creare un ambiente DevOps professionale con Raspberry Pi 4 e Ubuntu Server.
+
+# 🚀 DevOps Homelab - Guida per il tuo ambiente multi-stack
+
+Questa guida ti aiuta a configurare e gestire un homelab DevOps moderno, multi-servizio, con stack separati tramite Docker Compose.
+
+## 🗺️ Schema architetturale del sistema
+
+Esempio di architettura su un singolo nodo (Raspberry Pi):
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                RASPBERRY PI 4 (UNICO NODO)                   │
+│--------------------------------------------------------------│
+│  [docker-compose_mng.yml]                                    │
+│    - Traefik (proxy/reverse proxy)                           │
+│    - Portainer (gestione Docker)                             │
+│    - Agent (Portainer)                                       │
+│                                                              │
+│  [docker-compose_cloud.yml]                                  │
+│    - Nextcloud (cloud personale)                             │
+│    - Nextcloud DB (MariaDB)                                  │
+│    - Paperless (document management)                         │
+│    - Paperless DB (Postgres)                                 │
+│    - Paperless Redis                                         │
+│    - Rhasspy (voice assistant)                               │
+│                                                              │
+│  [docker-compose_iot.yml]                                    │
+│    - Home Assistant (domotica/IoT)                           │
+│    - Grafana (dashboard)                                     │
+│    - Mosquitto (MQTT broker)                                 │
+│    - Zigbee2MQTT                                             │
+│    - Node-RED                                                │
+│                                                              │
+│  [docker-compose_notes.yml]                                  │
+│    - Vikunja (task management)                               │
+│    - Vikunja DB (Postgres)                                   │
+│    - Firefly III (finanze personali)                         │
+│    - Firefly III DB (Postgres)                               │
+│    - Obsidian LiveSync (note personali)                      │
+│                                                              │
+│  [docker-compose_network.yml]                                │
+│    - Omada Controller (network)                              │
+│                                                              │
+│  ... (altri container di supporto: backup, ecc.)             │
+│                                                              │
+│  [ reti Docker: public, private ]                            │
+└──────────────────────────────────────────────────────────────┘
+                │
+                └───── LAN/WiFi ─────┐
+                                      │
+        ┌──────────────────────────────┘
+        │  Accesso da PC, mobile, ecc. │
+        └──────────────────────────────┘
+```
+
+**Legenda:**
+- Tutti i servizi girano su un unico Raspberry Pi.
+- Le reti Docker `public` e `private` separano i servizi esposti da quelli interni.
+- Traefik gestisce il reverse proxy e l'accesso centralizzato ai servizi.
 
 ## 📋 Prerequisiti
 
-- **Hardware**: Raspberry Pi 4 (4GB RAM consigliati)
-- **OS**: Ubuntu Server 22.04 LTS
+- **Hardware**: Raspberry Pi 4 (consigliato 4GB RAM o superiore) oppure qualsiasi server x86/ARM
+- **OS**: Ubuntu Server 22.04 LTS (o compatibile)
 - **Connessione**: Internet stabile
 - **Conoscenze base**: Linux, Docker, terminale
 
-## 🎯 Architettura del Sistema
+## 📦 Struttura del Progetto
+
+Questa repository contiene diversi file Compose, ognuno per uno stack tematico:
+
+- `docker-compose_cloud.yml`   → Cloud personale (Nextcloud, Paperless, Rhasspy)
+- `docker-compose_iot.yml`     → IoT & automazione (Home Assistant, Grafana, Mosquitto, Zigbee2MQTT, Node-RED, ecc.)
+- `docker-compose_mng.yml`     → Management (Portainer, agent)
+- `docker-compose_network.yml` → Network (Omada Controller)
+- `docker-compose_notes.yml`   → Note, task, finanze (Obsidian LiveSync, Vikunja, Firefly III)
+
+> **Nota:** Ogni file può essere avviato singolarmente o in combinazione, a seconda delle tue esigenze.
+
+## 🛠️ Setup iniziale
+
+### 1. Prepara il sistema
+
+```bash
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y curl wget git vim htop net-tools
+```
+
+### 2. Installa Docker e Docker Compose
+
+```bash
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+sudo usermod -aG docker $USER
+sudo apt install -y docker-compose-plugin
+sudo reboot
+```
+
+### 3. Verifica installazione
+
+```bash
+docker --version
+docker compose version
+docker run hello-world
+```
+
+### 4. Prepara directory di lavoro
+
+```bash
+mkdir -p ~/homelab/{config,data,projects}
+cd ~/homelab
+```
+
+### 5. Configura DNS locale (opzionale ma consigliato)
+
+Aggiungi queste righe al file `/etc/hosts` del tuo computer (sostituisci IP_RASPBERRY con l'IP del tuo server):
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    RASPBERRY PI 4                           │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
-│  │   TRAEFIK   │  │  PORTAINER  │  │   GITEA     │         │
-│  │ (Proxy)     │  │ (Docker UI) │  │ (Git)       │         │
-│  └─────────────┘  └─────────────┘  └─────────────┘         │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
-│  │   JENKINS   │  │ PROMETHEUS  │  │   GRAFANA   │         │
-│  │ (CI/CD)     │  │ (Metrics)   │  │ (Dashboard) │         │
-│  └─────────────┘  └─────────────┘  └─────────────┘         │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
-│  │    MINIO    │  │   PIHOLE    │  │ CODE-SERVER │         │
-│  │ (Storage)   │  │ (DNS)       │  │ (IDE)       │         │
-│  └─────────────┘  └─────────────┘  └─────────────┘         │
-└─────────────────────────────────────────────────────────────┘
+IP_RASPBERRY traefik.homelab.local
+IP_RASPBERRY portainer.homelab.local
+IP_RASPBERRY cloud.homelab.local
+IP_RASPBERRY docs.homelab.local
+IP_RASPBERRY voice.homelab.local
+IP_RASPBERRY hass.homelab.local
+IP_RASPBERRY iot-stats.homelab.local
+IP_RASPBERRY tasks.homelab.local
+IP_RASPBERRY finance.homelab.local
+IP_RASPBERRY notes.homelab.local
+IP_RASPBERRY omada.homelab.local
 ```
+
+## ⚙️ Configurazione
+
+### 1. File delle variabili d'ambiente
+
+Crea un file `.env` nella root del progetto con tutte le variabili richieste dai compose file. Esempio:
+
+```env
+STACK=homelab
+DOMAIN=homelab.local
+NEXTCLOUD_DB_PASS=superpassword
+NEXTCLOUD_ADMIN=admin
+NEXTCLOUD_ADMIN_PASS=superpassword
+MYSQL_ROOT_PASS=superpassword
+TZ=Europe/Rome
+PAPERLESS_SECRET=secretkey
+GRAFANA_ADMIN_PASS=admin
+AGENT_TOKEN=token
+OBSIDIAN_USER=utente
+OBSIDIAN_PASS=password
+VIKUNJA_DB_PASS=vikunja_pass
+VIKUNJA_JWT_SECRET=jwt_secret
+FIREFLY_APP_KEY=firefly_key
+FIREFLY_DB_PASS=firefly_pass
+FIREFLY_ADMIN_EMAIL=mail@example.com
+```
+Adatta i valori alle tue esigenze.
+
+### 2. Prepara file SSL (se usi Traefik con HTTPS)
+
+```bash
+mkdir -p ~/homelab/data
+touch ~/homelab/data/acme.json
+chmod 600 ~/homelab/data/acme.json
+```
+
+### 3. (Opzionale) Prepara file di configurazione custom (es. traefik.yml, prometheus.yml, ecc.)
+
+## 🚀 Deploy degli stack
+
+### 1. Crea le network Docker condivise (se richiesto dai compose)
+
+```bash
+docker network create public || true
+docker network create private || true
+```
+
+### 2. Avvia uno o più stack
+
+Esempio per avviare lo stack cloud:
+
+```bash
+docker compose -f docker-compose_cloud.yml up -d
+```
+
+Per avviare più stack insieme:
+
+```bash
+docker compose -f docker-compose_cloud.yml -f docker-compose_iot.yml up -d
+```
+
+Per vedere lo stato dei servizi:
+
+```bash
+docker compose -f docker-compose_cloud.yml ps
+```
+
+Per vedere i log:
+
+```bash
+docker compose -f docker-compose_cloud.yml logs -f
+```
+
+## 🖥️ Servizi principali e URL
+
+| Servizio            | URL                                 | Compose file                | Note/Utente                |
+|---------------------|-------------------------------------|-----------------------------|----------------------------|
+| Traefik Dashboard   | http://traefik.${DOMAIN}            | Tutti (proxy)               |                            |
+| Portainer           | http://portainer.${DOMAIN}          | docker-compose_mng.yml      | admin / scegli password    |
+| Nextcloud           | http://cloud.${DOMAIN}              | docker-compose_cloud.yml    | ${NEXTCLOUD_ADMIN}         |
+| Paperless           | http://docs.${DOMAIN}               | docker-compose_cloud.yml    |                            |
+| Rhasspy             | http://voice.${DOMAIN}:12101        | docker-compose_cloud.yml    |                            |
+| Home Assistant      | http://hass.${DOMAIN}:8123          | docker-compose_iot.yml      |                            |
+| Grafana             | http://iot-stats.${DOMAIN}:3000     | docker-compose_iot.yml      | admin / ${GRAFANA_ADMIN_PASS} |
+| Vikunja             | http://tasks.${DOMAIN}              | docker-compose_notes.yml    | admin / setup              |
+| Firefly III         | http://finance.${DOMAIN}            | docker-compose_notes.yml    | setup                      |
+| Obsidian LiveSync   | http://notes.${DOMAIN}:3000         | docker-compose_notes.yml    | ${OBSIDIAN_USER}           |
+| Omada Controller    | http://<IP>:8088                    | docker-compose_network.yml  |                            |
+
+> Sostituisci `${DOMAIN}` con il dominio scelto nel file `.env` (es: homelab.local).
+
+## 🔧 Gestione e manutenzione
+
+### Comandi utili
+
+```bash
+# Stato stack
+docker compose -f docker-compose_cloud.yml ps
+
+# Riavvia servizio
+docker compose -f docker-compose_cloud.yml restart <servizio>
+
+# Aggiorna immagini
+docker compose -f docker-compose_cloud.yml pull
+docker compose -f docker-compose_cloud.yml up -d
+
+# Backup volumi (esempio Nextcloud)
+docker run --rm -v devops-homelab_nextcloud_data:/data -v $(pwd):/backup alpine tar czf /backup/nextcloud-backup.tar.gz /data
+
+# Pulizia sistema
+docker system prune -a
+```
+
+### Monitoraggio risorse
+
+```bash
+htop
+df -h
+docker stats
+```
+
+## 🔒 Sicurezza
+
+1. Cambia tutte le password di default
+2. Configura SSL con Let's Encrypt se esposto su Internet
+3. Limita l’accesso alle reti private
+4. Fai backup regolari dei volumi
+5. Aggiorna regolarmente le immagini
+
+## 🚨 Troubleshooting
+
+```bash
+# Logs servizio
+docker compose -f <compose-file> logs <servizio>
+
+# Stato risorse
+free -h
+df -h
+docker stats
+
+# Verifica network
+docker network inspect public
+docker network inspect private
+
+# Verifica DNS
+nslookup traefik.${DOMAIN}
+```
+
+## 📚 Risorse utili
+
+- [Documentazione Docker](https://docs.docker.com/)
+- [Traefik Docs](https://doc.traefik.io/traefik/)
+- [Grafana Docs](https://grafana.com/docs/)
+- [Home Assistant Docs](https://www.home-assistant.io/docs/)
+- [Paperless-ngx Docs](https://paperless-ngx.readthedocs.io/)
+- [Vikunja Docs](https://vikunja.io/docs/)
+- [Firefly III Docs](https://docs.firefly-iii.org/)
+- [Obsidian LiveSync](https://github.com/vrtmrz/obsidian-livesync)
+
+---
+
+**🎉 Il tuo DevOps Homelab multi-stack è pronto!**
 
 ## 🔧 FASE 1: Preparazione Sistema
 
@@ -265,12 +528,17 @@ EOF
 ```
 
 ### Step 4: Preparazione File Docker Compose
-```bash
-# Crea il file docker-compose.yml
-nano ~/homelab/docker-compose.yml
+In questa repository troverai diversi file Compose, ognuno per uno stack specifico:
 
-# Copia e incolla il contenuto del docker-compose.yml fornito
-```
+- `docker-compose_cloud.yml`
+- `docker-compose_iot.yml`
+- `docker-compose_mng.yml`
+- `docker-compose_network.yml`
+- `docker-compose_notes.yml`
+
+> **Nota:** I file sono già pronti all'uso, non serve crearli manualmente.
+
+> **Importante:** Nei file Compose recenti il campo `version` non è più necessario e può essere rimosso.
 
 ### Step 5: Preparazione File SSL
 ```bash
@@ -278,6 +546,30 @@ nano ~/homelab/docker-compose.yml
 touch ~/homelab/data/acme.json
 chmod 600 ~/homelab/data/acme.json
 ```
+
+### Step 6: File delle variabili d'ambiente
+Per evitare warning all'avvio, crea un file `.env` nella root del progetto con tutte le variabili richieste dai compose file. Esempio:
+
+```env
+STACK=homelab
+DOMAIN=homelab.local
+NEXTCLOUD_DB_PASS=superpassword
+NEXTCLOUD_ADMIN=admin
+NEXTCLOUD_ADMIN_PASS=superpassword
+MYSQL_ROOT_PASS=superpassword
+TZ=Europe/Rome
+PAPERLESS_SECRET=secretkey
+GRAFANA_ADMIN_PASS=admin
+AGENT_TOKEN=token
+OBSIDIAN_USER=utente
+OBSIDIAN_PASS=password
+VIKUNJA_DB_PASS=vikunja_pass
+VIKUNJA_JWT_SECRET=jwt_secret
+FIREFLY_APP_KEY=firefly_key
+FIREFLY_DB_PASS=firefly_pass
+FIREFLY_ADMIN_EMAIL=mail@example.com
+```
+Adatta i valori alle tue esigenze.
 
 ## 🚀 FASE 3: Deploy dell'Ambiente
 
@@ -291,14 +583,17 @@ docker network create homelab
 
 ### Step 2: Avvio Servizi
 ```bash
-# Avvia tutti i servizi
-docker compose up -d
+# Avvia uno stack specifico (esempio: cloud)
+docker compose -f docker-compose_cloud.yml up -d
+
+# Oppure avvia più stack
+docker compose -f docker-compose_cloud.yml -f docker-compose_iot.yml up -d
 
 # Verifica stato servizi
-docker compose ps
+docker compose -f docker-compose_cloud.yml ps
 
 # Verifica logs
-docker compose logs -f
+docker compose -f docker-compose_cloud.yml logs -f
 ```
 
 ### Step 3: Verifica Deployments
@@ -319,46 +614,59 @@ docker volume ls
 - **URL**: http://traefik.homelab.local
 - **Note**: Dovrebbe essere accessibile immediatamente
 
+
 ### 2. Portainer Setup
-- **URL**: http://portainer.homelab.local
+- **URL**: http://portainer.${DOMAIN}
 - **Setup**: Crea account admin alla prima visita
 - **Username**: admin
 - **Password**: scegli una password sicura
+- **Avvio**: `docker compose -f docker-compose_mng.yml up -d`
 
-### 3. Gitea Configuration
-- **URL**: http://git.homelab.local
-- **Database**: PostgreSQL
-- **Host**: postgres:5432
-- **Username**: gitea
-- **Password**: gitea_password
-- **Database Name**: gitea
+### 3. Nextcloud (Cloud personale)
+- **URL**: http://cloud.${DOMAIN}
+- **Username**: ${NEXTCLOUD_ADMIN}
+- **Password**: ${NEXTCLOUD_ADMIN_PASS}
+- **Avvio**: `docker compose -f docker-compose_cloud.yml up -d`
 
-### 4. Jenkins Setup
-- **URL**: http://jenkins.homelab.local
-- **Initial Password**: 
-```bash
-# Ottieni password iniziale
-docker compose exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
-```
+### 4. Paperless (Document Management)
+- **URL**: http://docs.${DOMAIN}
+- **Avvio**: `docker compose -f docker-compose_cloud.yml up -d`
 
-### 5. Grafana Configuration
-- **URL**: http://grafana.homelab.local
+### 5. Rhasspy (Voice Assistant)
+- **URL**: http://voice.${DOMAIN}:12101
+- **Avvio**: `docker compose -f docker-compose_cloud.yml up -d`
+
+### 6. Home Assistant & IoT
+- **URL**: http://hass.${DOMAIN}:8123
+- **Avvio**: `docker compose -f docker-compose_iot.yml up -d`
+
+### 7. Grafana
+- **URL**: http://iot-stats.${DOMAIN}:3000
 - **Username**: admin
-- **Password**: admin
-- **Note**: Prometheus è già configurato come datasource
+- **Password**: ${GRAFANA_ADMIN_PASS}
+- **Avvio**: `docker compose -f docker-compose_iot.yml up -d`
 
-### 6. MinIO Setup
-- **URL**: http://minio.homelab.local
+### 8. Vikunja (Task Management)
+- **URL**: http://tasks.${DOMAIN}
 - **Username**: admin
-- **Password**: admin123456
+- **Password**: impostato in fase di setup
+- **Avvio**: `docker compose -f docker-compose_notes.yml up -d`
 
-### 7. Code Server
-- **URL**: http://code.homelab.local
-- **Password**: codeserver123
+### 9. Firefly III (Finanze personali)
+- **URL**: http://finance.${DOMAIN}
+- **Username**: impostato in fase di setup
+- **Password**: impostato in fase di setup
+- **Avvio**: `docker compose -f docker-compose_notes.yml up -d`
 
-### 8. Pi-hole Configuration
-- **URL**: http://pihole.homelab.local
-- **Password**: pihole123
+### 10. Obsidian LiveSync (Note personali)
+- **URL**: http://notes.${DOMAIN}:3000
+- **Username**: ${OBSIDIAN_USER}
+- **Password**: ${OBSIDIAN_PASS}
+- **Avvio**: `docker compose -f docker-compose_notes.yml up -d`
+
+### 11. Omada Controller (Network)
+- **URL**: http://<IP>:8088 (o porta configurata)
+- **Avvio**: `docker compose -f docker-compose_network.yml up -d`
 
 ## 📊 Monitoraggio e Logging
 
@@ -380,18 +688,18 @@ Importa dashboards utili:
 
 ### Comandi Utili
 ```bash
-# Verifica stato
-docker compose ps
+ # Verifica stato
+docker compose -f docker-compose_cloud.yml ps
 
 # Riavvia servizio specifico
-docker compose restart [servizio]
+docker compose -f docker-compose_cloud.yml restart [servizio]
 
 # Aggiorna immagini
-docker compose pull
-docker compose up -d
+docker compose -f docker-compose_cloud.yml pull
+docker compose -f docker-compose_cloud.yml up -d
 
 # Backup volumi
-docker run --rm -v homelab_gitea_data:/data -v $(pwd):/backup alpine tar czf /backup/gitea-backup.tar.gz /data
+docker run --rm -v devops-homelab_gitea_data:/data -v $(pwd):/backup alpine tar czf /backup/gitea-backup.tar.gz /data
 
 # Pulizia sistema
 docker system prune -a
