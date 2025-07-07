@@ -1,0 +1,150 @@
+version: "3.8"
+
+services:
+  # File Storage & Sync
+  nextcloud:
+    image: nextcloud:apache
+    deploy:
+      mode: replicated
+      replicas: 1
+      labels:
+        - traefik.enable=true
+        - traefik.http.services.cloud-${STACK}.loadbalancer.server.port=80
+        - traefik.http.routers.cloud-${STACK}.rule=Host(`cloud.${DOMAIN}`)
+    environment:
+      - MYSQL_HOST=nextcloud-db
+      - MYSQL_DATABASE=nextcloud
+      - MYSQL_USER=nextcloud
+      - MYSQL_PASSWORD=${NEXTCLOUD_DB_PASS}
+      - NEXTCLOUD_ADMIN_USER=${NEXTCLOUD_ADMIN}
+      - NEXTCLOUD_ADMIN_PASSWORD=${NEXTCLOUD_ADMIN_PASS}
+    volumes:
+      - nextcloud_data:/var/www/html
+      - personal_storage:/var/www/html/data
+    networks:
+      - public
+      - private
+
+  nextcloud-db:
+    image: mariadb:10.6
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASS}
+      - MYSQL_DATABASE=nextcloud
+      - MYSQL_USER=nextcloud
+      - MYSQL_PASSWORD=${NEXTCLOUD_DB_PASS}
+    volumes:
+      - nextcloud_db:/var/lib/mysql
+    networks:
+      - private
+
+  # Voice Assistant
+  rhasspy:
+    image: rhasspy/rhasspy
+    restart: unless-stopped
+    deploy:
+      mode: replicated
+      replicas: 1
+      labels:
+        - traefik.enable=true
+        - traefik.http.services.voice-${STACK}.loadbalancer.server.port=12101
+        - traefik.http.routers.voice-${STACK}.rule=Host(`voice.${DOMAIN}`)
+    volumes:
+      - rhasspy_data:/profiles
+    devices:
+      - /dev/snd:/dev/snd
+    environment:
+      - TZ=${TZ}
+    networks:
+      - public
+
+  # Document Management
+  paperless:
+    image: ghcr.io/paperless-ngx/paperless-ngx:latest
+    deploy:
+      mode: replicated
+      replicas: 1
+      labels:
+        - traefik.enable=true
+        - traefik.http.services.docs-${STACK}.loadbalancer.server.port=8000
+        - traefik.http.routers.docs-${STACK}.rule=Host(`docs.${DOMAIN}`)
+    environment:
+      - PAPERLESS_URL=https://docs.${DOMAIN}
+      - PAPERLESS_SECRET_KEY=${PAPERLESS_SECRET}
+      - PAPERLESS_REDIS=redis://paperless-redis:6379
+    volumes:
+      - paperless_data:/usr/src/paperless/data
+      - paperless_media:/usr/src/paperless/media
+      - paperless_export:/usr/src/paperless/export
+      - documents_inbox:/usr/src/paperless/consume
+    networks:
+      - public
+      - private
+
+  paperless-redis:
+    image: redis:6
+    volumes:
+      - paperless_redis:/data
+    networks:
+      - private
+
+volumes:
+  nextcloud_data:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: '/storage/data/${STACK}/nextcloud'
+  nextcloud_db:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: '/storage/data/${STACK}/nextcloud-db'
+  personal_storage:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: '/storage/personal'
+  rhasspy_data:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: '/storage/data/${STACK}/rhasspy'
+  paperless_data:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: '/storage/data/${STACK}/paperless/data'
+  paperless_media:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: '/storage/data/${STACK}/paperless/media'
+  paperless_export:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: '/storage/data/${STACK}/paperless/export'
+  paperless_redis:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: '/storage/data/${STACK}/paperless/redis'
+  documents_inbox:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: '/storage/documents/inbox'
+
+networks:
+  public:
+    external: true
+  private:
+    external: true
