@@ -1,0 +1,150 @@
+version: "3.8"
+
+services:
+  # Home Assistant Core
+  homeassistant:
+    image: homeassistant/home-assistant:stable
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.http.services.hass-${STACK}.loadbalancer.server.port=8123
+        - traefik.http.routers.hass-${STACK}.rule=Host(`hass.${DOMAIN}`)
+    privileged: true
+    environment:
+      - TZ=${TZ}
+    volumes:
+      - hass_config:/config
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - public
+      - automation
+
+  # Node-RED for Automation
+  nodered:
+    image: nodered/node-red:latest
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.http.services.nodered-${STACK}.loadbalancer.server.port=1880
+        - traefik.http.routers.nodered-${STACK}.rule=Host(`automation.${DOMAIN}`)
+    environment:
+      - TZ=${TZ}
+    volumes:
+      - nodered_data:/data
+    networks:
+      - public
+      - automation
+
+  # MQTT Broker
+  mosquitto:
+    image: eclipse-mosquitto:latest
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - mosquitto_config:/mosquitto/config
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+    networks:
+      - automation
+
+  # Zigbee2MQTT Bridge
+  zigbee2mqtt:
+    image: koenkk/zigbee2mqtt:latest
+    environment:
+      - TZ=${TZ}
+    volumes:
+      - zigbee2mqtt_data:/app/data
+      - /run/udev:/run/udev:ro
+    devices:
+      - /dev/ttyACM0:/dev/ttyACM0
+    networks:
+      - automation
+
+  # ESPHome for ESP devices
+  esphome:
+    image: esphome/esphome:latest
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.http.services.esphome-${STACK}.loadbalancer.server.port=6052
+        - traefik.http.routers.esphome-${STACK}.rule=Host(`esp.${DOMAIN}`)
+    volumes:
+      - esphome_config:/config
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - public
+      - automation
+
+  # Grafana for IoT Analytics
+  grafana:
+    image: grafana/grafana:latest
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.http.services.grafana-${STACK}.loadbalancer.server.port=3000
+        - traefik.http.routers.grafana-${STACK}.rule=Host(`iot-stats.${DOMAIN}`)
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASS}
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - public
+      - automation
+
+volumes:
+  hass_config:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: '/storage/data/${STACK}/homeassistant'
+  nodered_data:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: '/storage/data/${STACK}/nodered'
+  mosquitto_config:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: '/storage/data/${STACK}/mosquitto/config'
+  mosquitto_data:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: '/storage/data/${STACK}/mosquitto/data'
+  mosquitto_log:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: '/storage/data/${STACK}/mosquitto/log'
+  zigbee2mqtt_data:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: '/storage/data/${STACK}/zigbee2mqtt'
+  esphome_config:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: '/storage/data/${STACK}/esphome'
+  grafana_data:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: '/storage/data/${STACK}/grafana'
+
+networks:
+  public:
+    external: true
+  automation:
+    driver: overlay
+    internal: true
