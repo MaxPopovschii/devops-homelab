@@ -1,0 +1,61 @@
+version: "3.7"
+
+services:
+  agent:
+    image: portainer/agent
+    deploy:
+      mode: global
+      placement:
+        constraints: [node.platform.os == linux]
+    environment:
+      AGENT_SECRET: ${AGENT_TOKEN}
+    ports:
+      - target: 9001
+        published: 9001
+        protocol: tcp
+        mode: host
+    networks:
+      - private
+      - public
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker/volumes:/var/lib/docker/volumes
+
+  portainer:
+    image: portainer/portainer-ce:2.27.9
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      labels:
+        - traefik.enable=true
+        - traefik.tags=public
+        - traefik.http.services.portainer-${STACK}.loadbalancer.server.port=9000
+        - traefik.http.routers.portainer-${STACK}.tls=true
+        - traefik.http.routers.portainer-${STACK}.rule=Host(`${STACK}.${DOMAIN}`) && PathPrefix(`/portainer`)
+        - traefik.http.routers.portainer-${STACK}.middlewares=portainer-${STACK}-r1, portainer-${STACK}-r2
+        - traefik.http.middlewares.portainer-${STACK}-r1.redirectregex.permanent=true
+        - traefik.http.middlewares.portainer-${STACK}-r2.stripprefix.prefixes=/portainer/
+    volumes:
+      - portainer_data:/data
+    networks:
+      - private
+      - public
+
+volumes:
+  portainer_data:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: '/storage/data/${STACK}/portainer'
+
+networks:
+  private:
+    ipam:
+      driver: default
+      config:
+        - subnet: 10.240.8.0/22
+  public:
+    external: true
