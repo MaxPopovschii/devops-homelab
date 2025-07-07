@@ -104,3 +104,11 @@ volumes:
       type: 'none'
       o: 'bind'
       device: '/storage/data/${STACK}/firefly/db'
+
+networks:
+  public:
+    name: public
+    external: true
+  private:
+    name: private
+    external: true
