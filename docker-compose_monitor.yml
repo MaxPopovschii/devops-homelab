@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    deploy:
+      placement:
+        constraints:
+          - node.labels.monitoring == true
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2G
+    volumes:
+      - ../configs/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    networks:
+      - homelab
+
+  grafana:
+    image: grafana/grafana:latest
+    deploy:
+      placement:
+        constraints:
+          - node.labels.monitoring == true
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - homelab
+
+volumes:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  homelab:
+    external: true
