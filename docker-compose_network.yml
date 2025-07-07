@@ -1,0 +1,52 @@
+version: "3.7"
+
+services:
+  omada-controller:
+    image: mbentley/omada-controller:latest
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      labels:
+        - traefik.enable=true
+        - traefik.tags=public
+        - traefik.http.services.omada-controller-${STACK}.loadbalancer.server.port=8043
+        - traefik.http.routers.omada-controller-${STACK}.tls=true
+        - traefik.http.routers.omada-controller-${STACK}.rule=Host(`${STACK}.${DOMAIN}`) && PathPrefix(`/omada-controller`)
+    environment:
+      - TZ=Etc/UTC
+    ports:
+      - 8088:8088
+      - 8043:8043
+      - 8843:8843
+      - 19810:19810/udp
+      - 27001:27001/udp
+      - 29810:29810/udp
+      - 29811-29816:29811-29816
+    volumes:
+      - omada-controller_data:/opt/tplink/EAPController/data
+      - omada-controller_logs:/opt/tplink/EAPController/logs
+    networks:
+      - private
+      - public
+
+volumes:
+  omada-controller_data:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: '/storage/data/${STACK}/omada-controller'
+  omada-controller_logs:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: '/storage/log/${STACK}/omada-controller'
+
+networks:
+  private:
+    external: true
+  public:
+    external: true
