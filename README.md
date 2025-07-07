@@ -42,8 +42,6 @@ Esempio di architettura su un singolo nodo (Raspberry Pi):
 │  [docker-compose_network.yml]                                │
 │    - Omada Controller (network)                              │
 │                                                              │
-│  ... (altri container di supporto: backup, ecc.)             │
-│                                                              │
 │  [ reti Docker: public, private ]                            │
 └──────────────────────────────────────────────────────────────┘
                 │
@@ -202,23 +200,32 @@ Per vedere i log:
 docker compose -f docker-compose_cloud.yml logs -f
 ```
 
-## 🖥️ Servizi principali e URL
 
-| Servizio            | URL                                 | Compose file                | Note/Utente                |
-|---------------------|-------------------------------------|-----------------------------|----------------------------|
-| Traefik Dashboard   | http://traefik.${DOMAIN}            | Tutti (proxy)               |                            |
-| Portainer           | http://portainer.${DOMAIN}          | docker-compose_mng.yml      | admin / scegli password    |
-| Nextcloud           | http://cloud.${DOMAIN}              | docker-compose_cloud.yml    | ${NEXTCLOUD_ADMIN}         |
-| Paperless           | http://docs.${DOMAIN}               | docker-compose_cloud.yml    |                            |
-| Rhasspy             | http://voice.${DOMAIN}:12101        | docker-compose_cloud.yml    |                            |
-| Home Assistant      | http://hass.${DOMAIN}:8123          | docker-compose_iot.yml      |                            |
-| Grafana             | http://iot-stats.${DOMAIN}:3000     | docker-compose_iot.yml      | admin / ${GRAFANA_ADMIN_PASS} |
-| Vikunja             | http://tasks.${DOMAIN}              | docker-compose_notes.yml    | admin / setup              |
-| Firefly III         | http://finance.${DOMAIN}            | docker-compose_notes.yml    | setup                      |
-| Obsidian LiveSync   | http://notes.${DOMAIN}:3000         | docker-compose_notes.yml    | ${OBSIDIAN_USER}           |
-| Omada Controller    | http://<IP>:8088                    | docker-compose_network.yml  |                            |
+| Servizio                | URL                                      | Porta/Path         | Compose file                | Note/Utente                |
+|-------------------------|------------------------------------------|--------------------|-----------------------------|----------------------------|
+| Traefik Dashboard       | http://traefik.${DOMAIN}                 | 80                 | docker-compose_mng.yml      | Reverse proxy, dashboard   |
+| Portainer               | http://portainer.${DOMAIN}               | 9000               | docker-compose_mng.yml      | admin / scegli password    |
+| Agent (Portainer)       | -                                        | 9001 (interno)     | docker-compose_mng.yml      |                            |
+| Nextcloud               | http://cloud.${DOMAIN}                   | 80                 | docker-compose_cloud.yml    | ${NEXTCLOUD_ADMIN}         |
+| Nextcloud DB            | -                                        | 3306 (interno)     | docker-compose_cloud.yml    | MariaDB                    |
+| Paperless               | http://docs.${DOMAIN}                    | 8000               | docker-compose_cloud.yml    |                            |
+| Paperless DB            | -                                        | 5432 (interno)     | docker-compose_cloud.yml    | Postgres                   |
+| Paperless Redis         | -                                        | 6379 (interno)     | docker-compose_cloud.yml    | Redis                      |
+| Rhasspy                 | http://voice.${DOMAIN}:12101             | 12101              | docker-compose_cloud.yml    |                            |
+| Home Assistant          | http://hass.${DOMAIN}:8123               | 8123               | docker-compose_iot.yml      |                            |
+| Grafana                 | http://iot-stats.${DOMAIN}:3000          | 3000               | docker-compose_iot.yml      | admin / ${GRAFANA_ADMIN_PASS} |
+| Mosquitto               | mqtt://${DOMAIN}:1883                    | 1883               | docker-compose_iot.yml      | MQTT broker                |
+| Zigbee2MQTT             | -                                        | 8080 (web), 1883   | docker-compose_iot.yml      |                            |
+| Node-RED                | http://automation.${DOMAIN}:1880         | 1880               | docker-compose_iot.yml      |                            |
+| Vikunja                 | http://tasks.${DOMAIN}                   | 3456               | docker-compose_notes.yml    | admin / setup              |
+| Vikunja DB              | -                                        | 5432 (interno)     | docker-compose_notes.yml    | Postgres                   |
+| Firefly III             | http://finance.${DOMAIN}                 | 8080               | docker-compose_notes.yml    | setup                      |
+| Firefly III DB          | -                                        | 5432 (interno)     | docker-compose_notes.yml    | Postgres                   |
+| Obsidian LiveSync       | http://notes.${DOMAIN}:3000              | 3000               | docker-compose_notes.yml    | ${OBSIDIAN_USER}           |
+| Omada Controller        | http://<IP>:8088                         | 8088, 8043, ...    | docker-compose_network.yml  | TP-Link Omada              |
 
-> Sostituisci `${DOMAIN}` con il dominio scelto nel file `.env` (es: homelab.local).
+
+> Sostituisci `${DOMAIN}` con il dominio scelto nel file `.env` (es: homelab.local). I servizi DB e Redis sono accessibili solo internamente ai container.
 
 ## 🔧 Gestione e manutenzione
 
@@ -350,16 +357,15 @@ sudo nano /etc/hosts
 # Aggiungi queste righe (sostituisci IP_RASPBERRY con l'IP del tuo Pi)
 IP_RASPBERRY traefik.homelab.local
 IP_RASPBERRY portainer.homelab.local
-IP_RASPBERRY git.homelab.local
-IP_RASPBERRY jenkins.homelab.local
-IP_RASPBERRY prometheus.homelab.local
-IP_RASPBERRY grafana.homelab.local
-IP_RASPBERRY registry.homelab.local
-IP_RASPBERRY minio.homelab.local
-IP_RASPBERRY minio-api.homelab.local
-IP_RASPBERRY code.homelab.local
-IP_RASPBERRY uptime.homelab.local
-IP_RASPBERRY pihole.homelab.local
+IP_RASPBERRY cloud.homelab.local
+IP_RASPBERRY docs.homelab.local
+IP_RASPBERRY voice.homelab.local
+IP_RASPBERRY hass.homelab.local
+IP_RASPBERRY iot-stats.homelab.local
+IP_RASPBERRY tasks.homelab.local
+IP_RASPBERRY finance.homelab.local
+IP_RASPBERRY notes.homelab.local
+IP_RASPBERRY omada.homelab.local
 ```
 
 ### Step 3: Creazione File di Configurazione
@@ -395,137 +401,11 @@ accessLog: {}
 EOF
 ```
 
-#### Prometheus Configuration
-```bash
-cat > ~/homelab/config/prometheus.yml << 'EOF'
-global:
-  scrape_interval: 15s
-
-scrape_configs:
-  - job_name: 'prometheus'
-    static_configs:
-      - targets: ['localhost:9090']
-  
-  - job_name: 'docker'
-    static_configs:
-      - targets: ['host.docker.internal:9323']
-  
-  - job_name: 'traefik'
-    static_configs:
-      - targets: ['traefik:8080']
-  
-  - job_name: 'jenkins'
-    static_configs:
-      - targets: ['jenkins:8080']
-EOF
-```
-
-#### Loki Configuration
-```bash
-cat > ~/homelab/config/loki.yml << 'EOF'
-auth_enabled: false
-
-server:
-  http_listen_port: 3100
-
 ingester:
-  lifecycler:
-    address: 127.0.0.1
-    ring:
-      kvstore:
-        store: inmemory
-      replication_factor: 1
-    final_sleep: 0s
-  chunk_idle_period: 1h
-  max_chunk_age: 1h
-  chunk_target_size: 1048576
-  chunk_retain_period: 30s
-  max_transfer_retries: 0
-
 schema_config:
-  configs:
-    - from: 2020-10-24
-      store: boltdb-shipper
-      object_store: filesystem
-      schema: v11
-      index:
-        prefix: index_
-        period: 24h
-
 storage_config:
-  boltdb_shipper:
-    active_index_directory: /loki/boltdb-shipper-active
-    cache_location: /loki/boltdb-shipper-cache
-    shared_store: filesystem
-  filesystem:
-    directory: /loki/chunks
-
-limits_config:
-  reject_old_samples: true
-  reject_old_samples_max_age: 168h
-
-chunk_store_config:
-  max_look_back_period: 0s
-
-table_manager:
-  retention_deletes_enabled: false
-  retention_period: 0s
-EOF
-```
-
-#### Grafana Provisioning
-```bash
-# Crea directory per Grafana
-mkdir -p ~/homelab/config/grafana/provisioning/{dashboards,datasources}
-
-# Datasources
-cat > ~/homelab/config/grafana/provisioning/datasources/prometheus.yml << 'EOF'
-apiVersion: 1
-
 datasources:
-  - name: Prometheus
-    type: prometheus
-    url: http://prometheus:9090
-    access: proxy
-    isDefault: true
-  
-  - name: Loki
-    type: loki
-    url: http://loki:3100
-    access: proxy
-EOF
 
-# Dashboards
-cat > ~/homelab/config/grafana/provisioning/dashboards/dashboard.yml << 'EOF'
-apiVersion: 1
-
-providers:
-  - name: 'default'
-    orgId: 1
-    folder: ''
-    type: file
-    disableDeletion: false
-    updateIntervalSeconds: 10
-    allowUiUpdates: true
-    options:
-      path: /etc/grafana/provisioning/dashboards
-EOF
-```
-
-#### PostgreSQL Init Script
-```bash
-cat > ~/homelab/config/postgres-init.sql << 'EOF'
--- Database per Gitea
-CREATE DATABASE gitea;
-CREATE USER gitea WITH PASSWORD 'gitea_password';
-GRANT ALL PRIVILEGES ON DATABASE gitea TO gitea;
-
--- Database per Jenkins (opzionale)
-CREATE DATABASE jenkins;
-CREATE USER jenkins WITH PASSWORD 'jenkins_password';
-GRANT ALL PRIVILEGES ON DATABASE jenkins TO jenkins;
-EOF
-```
 
 ### Step 4: Preparazione File Docker Compose
 In questa repository troverai diversi file Compose, ognuno per uno stack specifico:
@@ -668,21 +548,7 @@ docker volume ls
 - **URL**: http://<IP>:8088 (o porta configurata)
 - **Avvio**: `docker compose -f docker-compose_network.yml up -d`
 
-## 📊 Monitoraggio e Logging
 
-### Prometheus Targets
-Verifica che tutti i target siano UP:
-- http://prometheus.homelab.local/targets
-
-### Grafana Dashboards
-Importa dashboards utili:
-- Docker Dashboard (ID: 893)
-- Node Exporter (ID: 1860)
-- Traefik Dashboard (ID: 4475)
-
-### Uptime Kuma
-- **URL**: http://uptime.homelab.local
-- Configura monitoring per tutti i servizi
 
 ## 🔧 Gestione e Manutenzione
 
@@ -698,8 +564,7 @@ docker compose -f docker-compose_cloud.yml restart [servizio]
 docker compose -f docker-compose_cloud.yml pull
 docker compose -f docker-compose_cloud.yml up -d
 
-# Backup volumi
-docker run --rm -v devops-homelab_gitea_data:/data -v $(pwd):/backup alpine tar czf /backup/gitea-backup.tar.gz /data
+
 
 # Pulizia sistema
 docker system prune -a
@@ -726,20 +591,7 @@ docker stats
 4. **Backup regolari** dei volumi importanti
 5. **Aggiorna regolarmente** le immagini
 
-### Backup Script
-```bash
-#!/bin/bash
-# backup-homelab.sh
-DATE=$(date +%Y%m%d_%H%M%S)
-BACKUP_DIR="/home/ubuntu/backups"
 
-mkdir -p $BACKUP_DIR
-
-# Backup volumi importanti
-docker run --rm -v homelab_gitea_data:/data -v $BACKUP_DIR:/backup alpine tar czf /backup/gitea-$DATE.tar.gz /data
-docker run --rm -v homelab_jenkins_data:/data -v $BACKUP_DIR:/backup alpine tar czf /backup/jenkins-$DATE.tar.gz /data
-docker run --rm -v homelab_grafana_data:/data -v $BACKUP_DIR:/backup alpine tar czf /backup/grafana-$DATE.tar.gz /data
-```
 
 ## 🚨 Troubleshooting
 
@@ -773,33 +625,9 @@ docker stats
 docker system prune -a
 ```
 
-## 🎓 Progetti Pratici
 
-### 1. Pipeline CI/CD Completa
-1. Crea repository in Gitea
-2. Configura webhook per Jenkins
-3. Scrivi Jenkinsfile per build/test/deploy
-4. Deploy su registro Docker locale
 
-### 2. Monitoring Completo
-1. Configura Node Exporter
-2. Crea dashboard custom in Grafana
-3. Configura alerting con Prometheus
-4. Integra con Uptime Kuma
 
-### 3. Sviluppo Remoto
-1. Usa Code Server per development
-2. Integra con Gitea per version control
-3. Usa MinIO per storage files
-4. Deploy automatico con Jenkins
-
-## 📚 Risorse Aggiuntive
-
-- [Documentazione Docker](https://docs.docker.com/)
-- [Traefik Docs](https://doc.traefik.io/traefik/)
-- [Prometheus Docs](https://prometheus.io/docs/)
-- [Grafana Docs](https://grafana.com/docs/)
-- [Jenkins Docs](https://www.jenkins.io/doc/)
 
 ## 🆘 Supporto
 
