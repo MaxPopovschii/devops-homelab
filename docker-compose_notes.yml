@@ -1,0 +1,106 @@
+services:
+  # Personal Knowledge Base
+  obsidian-livesync:
+    image: volkovlabs/obsidian-livesync:latest
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.http.services.notes-${STACK}.loadbalancer.server.port=3000
+        - traefik.http.routers.notes-${STACK}.rule=Host(`notes.${DOMAIN}`)
+    environment:
+      - OBSIDIAN_USER=${OBSIDIAN_USER}
+      - OBSIDIAN_PASS=${OBSIDIAN_PASS}
+    volumes:
+      - obsidian_data:/notes
+    networks:
+      - public
+
+  # Task Management
+  vikunja:
+    image: vikunja/vikunja
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.http.services.tasks-${STACK}.loadbalancer.server.port=3456
+        - traefik.http.routers.tasks-${STACK}.rule=Host(`tasks.${DOMAIN}`)
+    environment:
+      VIKUNJA_DATABASE_HOST: vikunja-db
+      VIKUNJA_DATABASE_PASSWORD: ${VIKUNJA_DB_PASS}
+      VIKUNJA_SERVICE_JWTSECRET: ${VIKUNJA_JWT_SECRET}
+    volumes:
+      - vikunja_files:/app/vikunja/files
+    networks:
+      - public
+      - private
+
+  vikunja-db:
+    image: postgres:13-alpine
+    environment:
+      POSTGRES_PASSWORD: ${VIKUNJA_DB_PASS}
+      POSTGRES_USER: vikunja
+      POSTGRES_DB: vikunja
+    volumes:
+      - vikunja_db:/var/lib/postgresql/data
+    networks:
+      - private
+
+  # Personal Finance
+  firefly:
+    image: fireflyiii/core:latest
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.http.services.finance-${STACK}.loadbalancer.server.port=8080
+        - traefik.http.routers.finance-${STACK}.rule=Host(`finance.${DOMAIN}`)
+    environment:
+      APP_KEY: ${FIREFLY_APP_KEY}
+      DB_PASSWORD: ${FIREFLY_DB_PASS}
+      SITE_OWNER: ${FIREFLY_ADMIN_EMAIL}
+    volumes:
+      - firefly_upload:/var/www/html/storage/upload
+    networks:
+      - public
+      - private
+
+  firefly-db:
+    image: postgres:13-alpine
+    environment:
+      POSTGRES_PASSWORD: ${FIREFLY_DB_PASS}
+      POSTGRES_USER: firefly
+      POSTGRES_DB: firefly
+    volumes:
+      - firefly_db:/var/lib/postgresql/data
+    networks:
+      - private
+
+volumes:
+  obsidian_data:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: '/storage/data/${STACK}/obsidian'
+  vikunja_files:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: '/storage/data/${STACK}/vikunja/files'
+  vikunja_db:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: '/storage/data/${STACK}/vikunja/db'
+  firefly_upload:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: '/storage/data/${STACK}/firefly/upload'
+  firefly_db:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: '/storage/data/${STACK}/firefly/db'
