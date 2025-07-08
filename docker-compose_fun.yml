@@ -1,0 +1,115 @@
+version: "3.8"
+
+services:
+  # Random Activity Generator Bot
+  boredom-killer:
+    image: python:3.9-alpine
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.http.services.fun-${STACK}.loadbalancer.server.port=8000
+        - traefik.http.routers.fun-${STACK}.rule=Host(`fun.${DOMAIN}`)
+    volumes:
+      - ./app:/app
+    command: python /app/bot.py
+    environment:
+      - TELEGRAM_TOKEN=${TELEGRAM_BOT_TOKEN}
+    networks:
+      - fun
+
+  # Meme Generator
+  meme-forge:
+    image: danieldent/memegen
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.http.services.memes-${STACK}.loadbalancer.server.port=5000
+        - traefik.http.routers.memes-${STACK}.rule=Host(`memes.${DOMAIN}`)
+    volumes:
+      - meme_templates:/templates
+    networks:
+      - fun
+
+  # Random Movie Picker
+  movie-roulette:
+    image: linuxserver/radarr:latest
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.http.services.movies-${STACK}.loadbalancer.server.port=7878
+        - traefik.http.routers.movies-${STACK}.rule=Host(`watchthis.${DOMAIN}`)
+    volumes:
+      - movie_data:/movies
+    environment:
+      - PUID=1000
+      - PGID=1000
+    networks:
+      - fun
+
+  # Random Recipe Generator
+  recipe-roulette:
+    image: ghcr.io/mealie-recipes/mealie:latest
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.http.services.food-${STACK}.loadbalancer.server.port=9000
+        - traefik.http.routers.food-${STACK}.rule=Host(`cook.${DOMAIN}`)
+    volumes:
+      - recipe_data:/app/data
+    environment:
+      - PUID=1000
+      - PGID=1000
+    networks:
+      - fun
+
+  # Random Music Player
+  music-shuffle:
+    image: deluan/navidrome:latest
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.http.services.music-${STACK}.loadbalancer.server.port=4533
+        - traefik.http.routers.music-${STACK}.rule=Host(`tunes.${DOMAIN}`)
+    volumes:
+      - music_data:/music
+      - music_config:/data
+    environment:
+      - ND_SCANINTERVAL=1m
+    networks:
+      - fun
+
+volumes:
+  meme_templates:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: '/storage/data/${STACK}/memes'
+  movie_data:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: '/storage/data/${STACK}/movies'
+  recipe_data:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: '/storage/data/${STACK}/recipes'
+  music_data:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: '/storage/data/${STACK}/music'
+  music_config:
+    driver: local
+    driver_opts:
+      type: 'none'
+      o: 'bind'
+      device: '/storage/data/${STACK}/music-config'
+
+networks:
+  fun:
+    driver: overlay
